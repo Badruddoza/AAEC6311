@@ -1,0 +1,39 @@
+import numpy as np
+from scipy.optimize import minimize
+
+# Define a simple quadratic function: f(x) = (x - 3)^2 + 4
+def objective_function(x):
+    return (x - 3)**2 + 4
+
+
+# Plot the function
+import matplotlib.pyplot as plt
+x_vals = np.linspace(-2, 8, 500)
+y_vals = objective_function(x_vals)
+plt.plot(x_vals, y_vals, label=r'$f(x) = (x - 3)^2 + 4$', color='blue')
+
+
+
+print(objective_function(2))
+
+# Initial guess for x
+x0 = np.array([0])
+
+# Minimize the function using BFGS
+result = minimize(objective_function, x0, method='BFGS')
+
+optimal_x=result.x[0]
+optimal_y = result.fun
+
+# Print the results
+print("Optimization Results:")
+print(f"Initial Guess: {x0[0]}")
+print(f"Optimal x: {result.x[0]}")
+print(f"Minimum Value: {result.fun:.4f}")
+print(f"Number of Iterations: {result.nit}")
+print(f"Converged: {result.success}")
+
+
+plt.axvline(x=optimal_x, color='red', linestyle='--', alpha=0.6)
+plt.axhline(y=optimal_y, color='green', linestyle='--', alpha=0.6)
+plt.show()
