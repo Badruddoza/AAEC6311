@@ -1,0 +1,80 @@
+import numpy as np
+from scipy.optimize import minimize
+from scipy import stats
+
+# Set random seed for reproducibility
+np.random.seed(1234)
+
+### Data generation ###########################################################
+# Generate sample data
+n = 100  # Sample size
+X = np.random.randn(n, 3)  # 3 predictors
+X = np.column_stack((np.ones(n), X))  # Add intercept
+beta = np.array([1.5, -2.0, 0.5, 1.0])  # True coefficients
+
+# Generate binary outcome using logit model
+log_odds = X @ beta
+p = 1 / (1 + np.exp(-log_odds))  # Sigmoid function
+y = (np.random.rand(n) < p).astype(int)  # Binary response
+
+
+### Maximization of the log-likelihood function ###############################
+# Define the log-likelihood function for logistic regression (probability-based form)
+def log_likelihood(b, X, y):
+    # Calculate predicted probabilities
+    linear_pred = X @ b
+    p = 1 / (1 + np.exp(-linear_pred))  # Convert log-odds to probabilities
+    # Calculate the log-likelihood using the probability form
+    log_lik = np.sum(y * np.log(p) + (1 - y) * np.log(1 - p))
+    return -log_lik  # Minimize the negative log-likelihood
+
+# Initial guess for beta
+beta_initial = np.zeros(X.shape[1])
+
+# Optimize the log-likelihood to find beta estimates
+result = minimize(log_likelihood, beta_initial, args=(X, y), method='BFGS')
+
+### Prepare the result #######################################################
+# Extract estimated coefficients
+beta_hat = result.x
+
+# Calculate predicted probabilities
+linear_pred_hat = X @ beta_hat
+p_hat = 1 / (1 + np.exp(-linear_pred_hat))
+
+# Calculate variance-covariance matrix
+hessian_inv = result.hess_inv
+
+# Calculate standard errors
+se_beta_hat = np.sqrt(np.diag(hessian_inv))
+
+# Calculate z-scores and p-values
+z_scores = beta_hat / se_beta_hat
+p_values = 2 * (1 - stats.norm.cdf(np.abs(z_scores)))
+
+# Combine results into a DataFrame
+import pandas as pd
+logit_results_manual = pd.DataFrame({
+    "Coefficient": beta_hat,
+    "Std. Error": se_beta_hat,
+    "z-score": z_scores,
+    "p-value": p_values
+}, index=['Intercept', 'X1', 'X2', 'X3'])
+
+print("\n**Manual Logit Model Estimates (Probability-Based)**")
+print(logit_results_manual)
+
+
+## Cross-check with the package ###############################################
+# Fit model using statsmodels for comparison
+import statsmodels.api as sm
+model = sm.Logit(y, X).fit(disp=0)
+logit_results_package = pd.DataFrame({
+    "Coefficient": model.params,
+    "Std. Error": model.bse,
+    "z-score": model.tvalues,
+    "p-value": model.pvalues
+})
+
+print("\n**Statsmodels Logit Model Estimates**")
+print(logit_results_package)
