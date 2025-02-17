@@ -1,0 +1,74 @@
+import numpy as np
+from scipy.optimize import minimize
+import pandas as pd
+import statsmodels.api as sm
+from scipy import stats
+
+# Set random seed for reproducibility
+np.random.seed(1234)
+
+# Simulate data
+n = 100
+x1 = np.random.normal(0, 1, n)
+x2 = np.random.normal(0, 1, n)
+errors = np.random.normal(0, 1, n)
+y = 5 + 2 * x1 + 3 * x2 + errors
+
+# Create dataframe
+data = pd.DataFrame({'y': y, 'x1': x1, 'x2': x2})
+
+# Construct the design matrix manually
+X = np.column_stack((np.ones(n), x1, x2))
+
+# Define the log-likelihood function for OLS
+def ols_log_likelihood(beta, X, y):
+    y_pred = X @ beta[:-1]
+    sigma = beta[-1]
+    residuals = y - y_pred
+    n = len(y)
+    log_lik = -0.5 * n * np.log(2 * np.pi * sigma**2) - (0.5 / sigma**2) * (residuals @ residuals)
+    return -log_lik  # Negative because we minimize
+
+# Initial guess: [beta0, beta1, beta2, sigma]
+initial_guess = np.append(np.zeros(X.shape[1]), 1.0)
+
+# Optimize the log-likelihood to find beta estimates
+result = minimize(ols_log_likelihood, initial_guess, args=(X, y), method='BFGS')
+
+# Extract estimated coefficients and sigma
+beta_hat = result.x[:-1]
+sigma_hat = result.x[-1]
+
+# Calculate variance-covariance matrix
+hessian_inv = result.hess_inv
+param_cov_matrix = hessian_inv[:-1, :-1]
+
+# Calculate standard errors
+se_beta_hat = np.sqrt(np.diag(param_cov_matrix))
+
+# Calculate t-statistics and p-values
+t_stats = beta_hat / se_beta_hat
+p_values = [2 * (1 - stats.t.cdf(abs(t), df=n - X.shape[1])) for t in t_stats]
+
+# Display MLE results
+mle_results = pd.DataFrame({
+    'Coefficient': beta_hat,
+    'Std. Error': se_beta_hat,
+    't-Statistic': t_stats,
+    'p-Value': p_values
+}, index=['Intercept', 'x1', 'x2'])
+
+
+print("OLS Estimates Using Maximum Likelihood (Manual Calculation) \n", mle_results)
+
+# Cross-check using statsmodels
+X_with_const = sm.add_constant(data[['x1', 'x2']])
+model = sm.OLS(data['y'], X_with_const).fit()
+package_results = pd.DataFrame({
+    'Coefficient': model.params,
+    'Std. Error': model.bse,
+    't-Statistic': model.tvalues,
+    'p-Value': model.pvalues
+})
+
+print("OLS Estimates Using Statsmodels \n", package_results)
