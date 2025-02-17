@@ -1,0 +1,97 @@
+import numpy as np
+from scipy.optimize import minimize
+from scipy import stats
+
+# Set random seed for reproducibility
+np.random.seed(1234)
+
+### Data generation ###########################################################
+n = 100  # Sample size
+X = np.random.randn(n, 3)  # 3 predictors
+X = np.column_stack((np.ones(n), X))  # Add intercept
+beta = np.array([1.5, -2.0, 0.5, 1.0])  # True coefficients
+
+# Generate binary outcome using probit model
+linear_pred = X @ beta
+p = stats.norm.cdf(linear_pred)  # Probit uses the CDF of the standard normal distribution
+y = (np.random.rand(n) < p).astype(int)  # Binary response
+
+
+
+
+
+
+
+### Maximization of the log-likelihood function ###############################
+def probit_log_likelihood(b, X, y):
+    linear_pred = X @ b
+    p = stats.norm.cdf(linear_pred)
+    # Clip probabilities to avoid log(0)
+    p = np.clip(p, 1e-6, 1 - 1e-6)
+    log_lik = np.sum(y * np.log(p) + (1 - y) * np.log(1 - p))    
+    return -log_lik  # Minimize the negative log-likelihood
+
+# Initial guess for beta
+beta_initial = np.zeros(X.shape[1])
+
+# Optimize the log-likelihood to find beta estimates
+result = minimize(probit_log_likelihood, beta_initial, args=(X, y), method='BFGS')
+
+
+
+
+
+
+### Prepare the result #######################################################
+# Extract estimated coefficients
+beta_hat = result.x
+
+# Calculate predicted probabilities
+linear_pred_hat = X @ beta_hat
+p_hat = stats.norm.cdf(linear_pred_hat)
+p_hat = np.clip(p_hat, 1e-6, 1 - 1e-6)  # Clip for safety
+
+# Calculate variance-covariance matrix
+hessian_inv = result.hess_inv
+
+# Calculate standard errors
+se_beta_hat = np.sqrt(np.diag(hessian_inv))
+
+# Calculate z-scores and p-values
+z_scores = beta_hat / se_beta_hat
+p_values = 2 * (1 - stats.norm.cdf(np.abs(z_scores)))
+
+# Calculate Marginal Effects (at the mean)
+mean_linear_pred = np.mean(linear_pred_hat)
+mean_pdf = stats.norm.pdf(mean_linear_pred)
+marginal_effects = mean_pdf * beta_hat
+
+# Combine results into a DataFrame
+import pandas as pd
+probit_results_manual = pd.DataFrame({
+    "Coefficient": beta_hat,
+    "Std. Error": se_beta_hat,
+    "z-score": z_scores,
+    "p-value": p_values,
+    "Marginal Effect": marginal_effects
+}, index=['Intercept', 'X1', 'X2', 'X3'])
+
+print("\n**Manual Probit Model Estimates with Marginal Effects**")
+print(probit_results_manual)
+
+
+
+
+
+
+## Cross-check with the package ###############################################
+import statsmodels.api as sm
+model = sm.Probit(y, X).fit(disp=0)
+
+# Calculate marginal effects using statsmodels
+marginal_effects_package = model.get_margeff(at='mean').summary()
+
+print("\n**Statsmodels Probit Model Estimates**")
+print(model.summary())
+print("\n**Marginal Effects (statsmodels)**")
+print(marginal_effects_package)
