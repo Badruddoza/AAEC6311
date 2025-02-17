@@ -1,1 +1,197 @@
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+import matplotlib.pyplot as plt
+from scipy import stats
+
+# Simulate data with heteroskedasticity
+np.random.seed(1234)
+n = 100
+x1 = np.random.normal(0, 1, n)
+x2 = abs(np.random.normal(0, 1, n))
+# Heteroskedastic error: variance increases with x1
+errors = np.random.normal(0, 1 + 0.5 * x1**2, n)
+y = 5 + 2*x1 + 3*x2 + errors
+# Create dataframe
+data = pd.DataFrame({'y': y, 'x1': x1, 'x2': x2})
+
+
+
+# Construct the design matrix manually
+X = np.column_stack((np.ones(n), x1, x2))
+
+# Estimate beta_hat manually (OLS formula: (X'X)^(-1)X'y)
+beta_hat = np.linalg.inv(X.T @ X) @ X.T @ y
+
+# Calculate residuals and variance of residuals
+y_hat = X @ beta_hat
+residuals = y - y_hat
+sigma_squared = (residuals @ residuals) / (n - X.shape[1])
+
+# Calculate the variance-covariance matrix of beta_hat
+var_beta_hat = sigma_squared * np.linalg.inv(X.T @ X)
+
+# Calculate standard errors, t-statistics, and p-values
+se_beta_hat = np.sqrt(np.diag(var_beta_hat))
+t_stats = beta_hat / se_beta_hat
+p_values = [2 * (1 - stats.t.cdf(abs(t), df=n - X.shape[1])) for t in t_stats]
+
+
+# Display results
+results = pd.DataFrame({
+    'Coefficient': beta_hat,
+    'Standard Error': se_beta_hat,
+    't-Statistic': t_stats,
+    'p-Value': p_values
+}, index=['Intercept', 'x1', 'x2'])
+
+print(results)
+
+
+# Cross-Check: OLS using a package
+model_ols=sm.OLS(data['y'], X).fit()
+print(model_ols)
+
+
+
+
+
+###### Detecting Heteroskedasticity ####################################################
+# Plot residuals vs fitted values
+data['y_hat'] = y_hat
+data['eps_hat'] = residuals
+plt.scatter(data['y_hat'], data['eps_hat'], alpha=0.6)
+plt.axhline(y=0, color='red', linestyle='--')
+plt.title('Residuals vs Fitted Values (Heteroskedasticity Pattern)')
+plt.xlabel('Fitted Values')
+plt.ylabel('Residuals')
+plt.show()
+
+
+##### Testing for heteroskedasticity
+# White's test from scratch
+data['eps_hat_2'] = data['eps_hat']**2
+# Generate the terms for White's test: 
+# original variables, squares, and interactions
+data['x1_2'] = data['x1']**2
+data['x2_2'] = data['x2']**2
+data['x1_x2'] = data['x1'] * data['x2']
+
+# Run auxiliary regression for White's test
+X_white = sm.add_constant(data[['x1', 'x2', 'x1_2', 'x2_2', 'x1_x2']])
+white_model = sm.OLS(data['eps_hat_2'], X_white).fit()
+white_r2 = white_model.rsquared
+
+# Calculate test statistic and p-value
+white_stat = n * white_r2
+df_white = X_white.shape[1] - 1  # degrees of freedom without constant
+white_pval = 1 - stats.chi2.cdf(white_stat, df=df_white)
+
+print(f"White's Test (from scratch): Stat={white_stat:.4f}, p-value={white_pval:.4f}")
+
+
+# Check: White's test using a package
+import statsmodels.stats.diagnostic as smd
+white_test = smd.het_white(data['eps_hat'], X)
+print(f"White's Test (package): Stat={white_test[0]:.4f}, p-value={white_test[1]:.4f}")
+
+
+
+
+
+
+#### Addressing Heteroskedasticity using a new Var-Cov Matrix #################
+
+# Calculate robust (Huber-White) variance-covariance matrix
+# Classic Huber-White estimator or HC1
+xtx_inv = np.linalg.inv(X.T @ X)
+S = sum(residuals[i]**2 * np.outer(X[i], X[i]) for i in range(n))
+# where np.outer is the outer product of two vectors
+# each element is multiplied will all elements of the other vector
+robust_cov_matrix = xtx_inv @ S @ xtx_inv
+print("Huber-White Robust VCE (from scratch):\n", robust_cov_matrix)
+
+# Cross-Check: Calculate robust (Huber-White) variance-covariance matrix using statsmodels
+print("Huber-White Robust VCE (package):\n", model_ols.get_robustcov_results(cov_type='HC0').cov_params())
+
+# Extract robust standard errors from robust_cov_matrix (calculated manually)
+robust_se = np.sqrt(np.diag(robust_cov_matrix))
+robust_t = beta_hat / robust_se
+robust_p = [2 * (1 - stats.t.cdf(abs(t), df=n - X.shape[1])) for t in robust_t]
+
+# Create a DataFrame with results from robust_cov_matrix
+robust_results = pd.DataFrame({
+    'Coefficient': beta_hat,
+    'Robust SE': robust_se,
+    'Robust t': robust_t,
+    'Robust p': robust_p
+}, index=['Intercept', 'x1', 'x2'])
+
+# Print the table with results from robust_cov_matrix
+print("\n**Robust OLS Estimates - From Scratch**\n")
+print(robust_results)
+
+
+
+
+
+
+
+# Other forms of heteroskedasticity correction
+#################################################################
+# Insights: Calculate leverage
+hat_matrix = X @ np.linalg.inv(X.T @ X) @ X.T
+leverages = np.diag(hat_matrix)
+data['hii'] = leverages
+data['high_lev'] = data['hii'] > 2 * X.shape[1] / n
+
+# Plot residuals vs fitted values with high-leverage points in red
+plt.scatter(data['y_hat'], data['eps_hat'], color='blue', alpha=0.6, label='Regular Points')
+plt.scatter(data.loc[data['high_lev'], 'y_hat'], data.loc[data['high_lev'], 'eps_hat'], color='red', alpha=0.8, label='High-Leverage Points')
+# Add reference line at residual = 0
+plt.axhline(y=0, color='black', linestyle='--')
+# Customize plot appearance
+plt.title('Residuals vs Fitted Values (High-Leverage in Red)')
+plt.xlabel('Fitted Values (y_hat)')
+plt.ylabel('Residuals (eps_hat)')
+plt.legend()
+plt.show()
+
+
+
+# Calculate robust (HC4) variance-covariance matrix from scratch
+# Calculate the sum of leverage values
+leverage_sum = sum(leverages)
+
+# Calculate S matrix for HC4
+S_HC4 = np.zeros((X.shape[1], X.shape[1]))
+for i in range(n):
+    xi = X[i].reshape(-1, 1)
+    hi = leverages[i]
+    delta_i = min(4, (n * hi) / leverage_sum)
+    weight = residuals[i]**2 * (1 - hi)**(-delta_i)
+    S_HC4 += weight * (xi @ xi.T)
+
+# Calculate HC4 variance-covariance matrix
+hc4_cov_matrix = xtx_inv @ S_HC4 @ xtx_inv
+print("\nHC4 Robust VCE (from scratch):\n", hc4_cov_matrix)
+
+
+# Extract HC4 robust standard errors
+hc4_se = np.sqrt(np.diag(hc4_cov_matrix))
+hc4_t = beta_hat / hc4_se
+hc4_p = [2 * (1 - stats.t.cdf(abs(t), df=n - X.shape[1])) for t in hc4_t]
+
+# Create a DataFrame with HC4 results
+hc4_results = pd.DataFrame({
+    'Coefficient': beta_hat,
+    'Robust SE (HC4)': hc4_se,
+    'Robust t': hc4_t,
+    'Robust p': hc4_p
+}, index=['Intercept', 'x1', 'x2'])
+
+# Print HC4 results
+print("\n**Robust OLS Estimates - HC4 (Manual Calculation)**\n")
+print(hc4_results)
+print(hc4_results.round(4))
 
