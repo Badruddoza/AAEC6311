@@ -1,0 +1,26 @@
+import numpy as np
+from scipy.optimize import minimize
+
+# Step 1: Simulate Data
+np.random.seed(1234)
+n = 100
+X = np.column_stack((np.ones(n), np.random.randn(n), np.random.randn(n)))
+beta_true = np.array([5, 2, 3])
+y = X @ beta_true + np.random.normal(0, 1, n)
+
+# Step 2: Define Moment Conditions
+def gmm_objective(beta, X, y):
+    residuals = y - X @ beta
+    moments = X.T @ residuals / len(y)
+    return moments @ moments  # Quadratic form with identity matrix
+
+# Step 3: Minimize the Objective
+initial_guess = np.zeros(X.shape[1])
+result = minimize(gmm_objective, initial_guess, args=(X, y), method='BFGS')
+
+# Print GMM estimates
+print("GMM Estimates:", result.x)
+
+# Step 4: Cross-check with OLS
+beta_ols = np.linalg.inv(X.T @ X) @ X.T @ y
+print("OLS Estimates:", beta_ols)
