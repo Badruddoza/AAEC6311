@@ -10,7 +10,7 @@ n = 100
 x1 = np.random.normal(0, 1, n)
 x2 = abs(np.random.normal(0, 1, n))
 # Heteroskedastic error: variance increases with x1
-errors = np.random.normal(0, 1 + 0.5 * x1**2, n)
+errors = np.random.normal(0, 1 + 0.5 * x2**2, n)
 y = 5 + 2*x1 + 3*x2 + errors
 # Create dataframe
 data = pd.DataFrame({'y': y, 'x1': x1, 'x2': x2})
@@ -103,7 +103,7 @@ print(f"White's Test (package): Stat={white_test[0]:.4f}, p-value={white_test[1]
 #### Addressing Heteroskedasticity using a new Var-Cov Matrix #################
 
 # Calculate robust (Huber-White) variance-covariance matrix
-# Classic Huber-White estimator or HC1
+# Classic Huber-White estimator or HC0
 xtx_inv = np.linalg.inv(X.T @ X)
 S = sum(residuals[i]**2 * np.outer(X[i], X[i]) for i in range(n))
 # where np.outer is the outer product of two vectors
