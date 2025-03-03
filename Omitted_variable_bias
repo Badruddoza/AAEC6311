@@ -1,84 +1,50 @@
-#pip install statsmodels
 import numpy as np
-import pandas as pd
 import statsmodels.api as sm
-import matplotlib.pyplot as plt
-from scipy.stats import pearsonr
 
 # Set seed for reproducibility
 np.random.seed(1234)
 
-# Simulation parameters
-n = 1000
-B0, B1, B2, B3 = 5, 2, 3, 1.5
+# Parameters
+n = 1000  # Sample size
+B0, B1, B2, B3 = 1, 2, 3, 4  # True coefficients
 
-# Simulate data
-X3 = np.random.uniform(1, 10, n)  # X3 > 0 for log
+# Simulate X3 and derive X1 = log(X3)
+X3 = np.random.exponential(scale=2, size=n)  # X3 ~ Exponential(2)
 X1 = np.log(X3)  # X1 = log(X3)
-X2 = np.random.normal(5, 2, n)
-epsilon = np.random.normal(0, 1, n)
+X2 = np.random.normal(loc=5, scale=1, size=n)  # X2 ~ N(5, 1)
 
-# Generate the dependent variable
+# True model: y = B0 + B1*X1 + B2*X2 + B3*X3 + epsilon
+epsilon = np.random.normal(loc=0, scale=1, size=n)  # epsilon ~ N(0, 1)
 y = B0 + B1 * X1 + B2 * X2 + B3 * X3 + epsilon
 
-# Correlation between X1 and X3
-corr, p_value = pearsonr(X1, X3)
-print(f"Correlation between X1 and X3: {corr:.4f} (p-value: {p_value:.4e})")
-corr, p_value = pearsonr(X2, X3)
-print(f"Correlation between X2 and X3: {corr:.4f} (p-value: {p_value:.4e})")
+# Estimated model (omitting X3)
+X = np.column_stack((np.ones(n), X1, X2))  # Design matrix with intercept, X1, X2
+model = sm.OLS(y, X).fit()  # Fit the model
+beta_hat = model.params  # Estimated coefficients
 
-# Full model (with X3)
-X_full = sm.add_constant(np.column_stack((X1, X2, X3)))
-model_full = sm.OLS(y, X_full).fit()
+# Theoretical bias
+# Auxiliary regression: X3 = gamma0 + gamma1*X1 + gamma2*X2 + error
+X_aux = np.column_stack((np.ones(n), X1, X2))
+aux_model = sm.OLS(X3, X_aux).fit()
+gamma1, gamma2 = aux_model.params[1], aux_model.params[2]
 
-# Model excluding X3 (omitted variable bias)
-X_omitted = sm.add_constant(np.column_stack((X1, X2)))
-model_omitted = sm.OLS(y, X_omitted).fit()
+# Theoretical bias formulas
+bias_B0 = B3 * (np.mean(X3) - gamma1 * np.mean(X1) - gamma2 * np.mean(X2))
+bias_B1 = B3 * (np.cov(X1, X3)[0, 1] / np.var(X1))
+bias_B2 = B3 * (np.cov(X2, X3)[0, 1] / np.var(X2))
 
-# Display results
-print("\nFull Model (with X3):")
-print(model_full.summary())
+# Empirical bias (difference between estimated and true coefficients)
+empirical_bias_B0 = beta_hat[0] - B0
+empirical_bias_B1 = beta_hat[1] - B1
+empirical_bias_B2 = beta_hat[2] - B2
 
-print("\nModel with Omitted Variable (excluding X3):")
-print(model_omitted.summary())
+# Variance of the estimated coefficients
+var_B0, var_B1, var_B2 = model.bse[0]**2, model.bse[1]**2, model.bse[2]**2
 
-# Calculate omitted variable bias
-bias_B1 = model_omitted.params[1] - model_full.params[1]
-bias_B2 = model_omitted.params[2] - model_full.params[2]
-bias_B0 = model_omitted.params[0] - model_full.params[0]
-
-print(f"\nOmitted Variable Bias:")
-print(f"Bias in B1: {bias_B1:.4f}")
-print(f"Bias in B2: {bias_B2:.4f}")
-print(f"Bias in B0: {bias_B0:.4f}")
-
-# Compare variances
-var_B1_full = model_full.bse[1]**2
-var_B1_omitted = model_omitted.bse[1]**2
-var_B2_full = model_full.bse[2]**2
-var_B2_omitted = model_omitted.bse[2]**2
-var_B0_full = model_full.bse[0]**2
-var_B0_omitted = model_omitted.bse[0]**2
-
-print(f"\nComparison of Variances:")
-print(f"Variance of B1 (full): {var_B1_full:.6f}, Variance of B1 (omitted): {var_B1_omitted:.6f}")
-print(f"Variance of B2 (full): {var_B2_full:.6f}, Variance of B2 (omitted): {var_B2_omitted:.6f}")
-print(f"Variance of B0 (full): {var_B0_full:.6f}, Variance of B0 (omitted): {var_B0_omitted:.6f}")
-
-# Visualize the effect of omitted variable bias
-coeffs = pd.DataFrame({
-"Coefficient": ["B0", "B1", "B2"],
-"Full Model": [model_full.params[0], model_full.params[1], model_full.params[2]],
-"Omitted Model": [model_omitted.params[0], model_omitted.params[1], model_omitted.params[2]],
-})
-
-coeffs.plot(kind='bar', x='Coefficient', figsize=(8, 5))
-plt.title("Comparison of Coefficients with and without Omitted Variable")
-plt.ylabel("Coefficient Estimates")
-plt.xticks(rotation=0)
-plt.axhline(y=B0, color='black', linestyle='--', label='True B0')
-plt.axhline(y=B1, color='blue', linestyle='--', label='True B1')
-plt.axhline(y=B2, color='green', linestyle='--', label='True B2')
-plt.legend()
-plt.tight_layout()
-plt.show()
+# Print results
+print("Theoretical Bias:")
+print(f"Bias(B0): {bias_B0:.4f}, Bias(B1): {bias_B1:.4f}, Bias(B2): {bias_B2:.4f}")
+print("\nEmpirical Bias:")
+print(f"Bias(B0): {empirical_bias_B0:.4f}, Bias(B1): {empirical_bias_B1:.4f}, Bias(B2): {empirical_bias_B2:.4f}")
+print("\nVariance of Estimated Coefficients:")
+print(f"Var(B0): {var_B0:.4f}, Var(B1): {var_B1:.4f}, Var(B2): {var_B2:.4f}")
