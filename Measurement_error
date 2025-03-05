@@ -1,0 +1,43 @@
+import numpy as np
+import statsmodels.api as sm
+import matplotlib.pyplot as plt
+
+# Set random seed for reproducibility
+np.random.seed(1234)
+
+# Simulate true X and measurement error
+n = 1000  # Sample size
+X_true = np.random.normal(10, 5, n)  # True X values
+e = np.random.normal(0, 3, n)  # Measurement error
+
+# Simulated measurement error in X
+X_obs = X_true + e  # Mismeasured X
+
+# Generate Y based on true X
+beta_0 = 2
+beta_1 = 1.5  # True slope coefficient
+u = np.random.normal(0, 5, n)  # Random error term
+Y = beta_0 + beta_1 * X_true + u
+
+# Run OLS regression with true X
+X_true_const = sm.add_constant(X_true)
+model_true = sm.OLS(Y, X_true_const).fit()
+
+# Run OLS regression with mismeasured X
+X_obs_const = sm.add_constant(X_obs)
+model_obs = sm.OLS(Y, X_obs_const).fit()
+
+# Display results
+print("OLS Regression using True X:")
+print(model_true.summary())
+
+print("\nOLS Regression using Mismeasured X (with attenuation bias):")
+print(model_obs.summary())
+
+# Plot comparison of estimated coefficients
+plt.bar(["True X", "Mismeasured X"], [model_true.params[1], model_obs.params[1]], color=['blue', 'red'])
+plt.axhline(y=beta_1, color='black', linestyle='--', label="True β1")
+plt.title("Effect of Measurement Error (Attenuation Bias)")
+plt.ylabel("Estimated Coefficient for X")
+plt.legend()
+plt.show()
