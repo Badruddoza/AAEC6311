@@ -1,0 +1,52 @@
+# Import necessary libraries
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from linearmodels.iv import IV2SLS  # Import IV2SLS from linearmodels
+
+# Load the CigarettesSW dataset
+data = sm.datasets.get_rdataset("CigarettesSW", "AER").data
+
+# Convert variables to log form for elasticity interpretation
+data['log_packs'] = np.log(data['packs'])  # Dependent variable
+data['log_rprice'] = np.log(data['price'] / data['cpi'])  # Endogenous regressor
+data['log_rincome'] = np.log(data['income'] / data['population'] / data['cpi'])  # Exogenous regressor
+data['salestax'] = data['tax'] / data['cpi']  # Instrument
+
+# Define variables
+y = data['log_packs']  # Dependent variable
+X_endog = data[['log_rprice']]  # Endogenous variable (2D)
+X_exog = sm.add_constant(data[['log_rincome']])  # Exogenous variable + constant
+Z = data[['salestax']]  # Instrument (DO NOT add a constant)
+
+# Perform IV Estimation using 2SLS package
+iv_model = IV2SLS(dependent=y, exog=X_exog, endog=X_endog, instruments=Z).fit()
+
+# Display the results
+print(iv_model.summary)
+
+# Define variables
+y = data['log_packs'].values.reshape(-1, 1)  # Convert to column vector
+X = sm.add_constant(data[['log_rprice', 'log_rincome']]).values  # Regressors with constant
+Z = sm.add_constant(data[['salestax', 'log_rincome']]).values  # Instruments with constant
+
+# Compute the IV estimator: β_IV = (Z'X)^-1 Z'y
+ZX_inv = np.linalg.inv(Z.T @ X)  # (Z'X)^-1
+beta_IV = ZX_inv @ Z.T @ y  # Compute IV estimator
+
+# Compute residuals for variance estimation
+y_hat = X @ beta_IV
+residuals = y - y_hat
+sigma_sq = (residuals.T @ residuals) / (len(y) - len(beta_IV))  # Error variance
+
+# Compute variance of β_IV: Var(β_IV) = σ² * (Z'X)^-1 Z'Z (Z'X)^-1
+var_beta_IV = sigma_sq * ZX_inv @ Z.T @ Z @ ZX_inv.T
+std_err_IV = np.sqrt(np.diag(var_beta_IV))  # Standard errors
+
+# Display Results
+print("\nManual IV Estimation:")
+results_df = pd.DataFrame({
+    'Coefficient': beta_IV.flatten(),
+    'Std. Error': std_err_IV.flatten()
+}, index=['Intercept', 'log_rprice', 'log_rincome'])
+print(results_df)
