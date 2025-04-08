@@ -1,0 +1,46 @@
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from scipy.stats import ttest_ind
+
+np.random.seed(1234)
+
+# Parameters
+tau = -10  # true treatment effect
+n = 20 # Small sample, change it to 1000 to compare the effect
+
+# Covariates
+age = np.random.normal(50, 10, n)
+income = np.random.normal(50000, 10000, n)
+mom_chol = np.random.normal(220, 20, n)
+
+# Treatment assignment (RCT = random)
+D = np.random.binomial(1, 0.5, n)
+
+# Outcome: y = baseline + treatment + noise
+y = 200 + tau * D + 0.2 * age - 0.0001 * income + 0.3 * mom_chol + np.random.normal(0, 10, n)
+
+df= pd.DataFrame({
+    'y': y,
+    'D': D,
+    'age': age,
+    'income': income,
+    'mom_chol': mom_chol
+})
+df
+
+# T-test
+treated = df[df['D'] == 1]['y']
+control = df[df['D'] == 0]['y']
+t_stat, p_val = ttest_ind(treated, control)
+print(t_stat)
+print(p_val)
+
+# Regression 1: y ~ D
+reg1=sm.OLS(df['y'], sm.add_constant(df['D'])).fit()
+reg1.summary()
+
+# Regression 2: y ~ D + covariates
+X = df[['D', 'age', 'income', 'mom_chol']]
+reg2 = sm.OLS(df['y'], sm.add_constant(X)).fit()
+reg2.summary()
