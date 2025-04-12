@@ -1,0 +1,36 @@
+import pandas as pd
+import statsmodels.formula.api as smf
+from linearmodels.panel import PanelOLS
+
+# Step 1: Enter the data
+data = pd.DataFrame({
+    'individual': [1, 1, 2, 2, 3, 3, 4, 4],
+    'year': [2000, 2001]*4,
+    'cholesterol': [220, 215, 225, 220, 230, 200, 235, 205],
+})
+
+# Step 2: Define treatment and post indicators
+data['treated'] = data['individual'].isin([3, 4]).astype(int)
+data['post'] = (data['year'] == 2001).astype(int)
+data['did'] = data['treated'] * data['post']
+
+# Manual DiD calculation
+control_pre = data.query("treated == 0 and post == 0")['cholesterol'].mean()
+control_post = data.query("treated == 0 and post == 1")['cholesterol'].mean()
+treated_pre = data.query("treated == 1 and post == 0")['cholesterol'].mean()
+treated_post = data.query("treated == 1 and post == 1")['cholesterol'].mean()
+
+change_control = control_post - control_pre
+change_treated = treated_post - treated_pre
+did_manual = change_treated - change_control
+
+print(f"Manual DiD estimate: {did_manual:.2f}")
+
+# Step 3: Regression with interaction term
+model_interact = smf.ols("cholesterol ~ treated + post + did", data=data).fit()
+print(f"Regression DiD (interaction): {model_interact.params['did']:.2f}")
+
+# Step 4: TWFE using PanelOLS
+data = data.set_index(['individual', 'year'])
+twfe_model = PanelOLS.from_formula("cholesterol ~ did + EntityEffects + TimeEffects", data=data).fit()
+print(f"TWFE DiD estimate: {twfe_model.params['did']:.2f}")
