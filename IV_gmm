@@ -53,3 +53,34 @@ results_df = pd.DataFrame({
 }, index=['Intercept', 'log_rprice', 'log_rincome'])
 
 print(results_df)
+
+
+
+####################
+
+import pandas as pd
+import numpy as np
+import statsmodels.api as sm
+from linearmodels.iv import IVGMM
+
+# Load data
+data = sm.datasets.get_rdataset("CigarettesSW", "AER").data
+
+# Prepare variables
+data['log_packs'] = np.log(data['packs'])  # Dependent variable
+data['log_rprice'] = np.log(data['price'] / data['cpi'])  # Endogenous regressor
+data['log_rincome'] = np.log(data['income'] / data['population'] / data['cpi'])  # Exogenous regressor
+data['salestax'] = data['tax'] / data['cpi']  # Instrument
+
+# Define variables
+y = data['log_packs']
+X_endog = data[['log_rprice']]  # Endogenous regressor
+X_exog = sm.add_constant(data[['log_rincome']])  # Exogenous regressor
+Z = data[['salestax']]  # Instrument for log_rprice
+
+# GMM IV estimation
+gmm_model = IVGMM(dependent=y, exog=X_exog, endog=X_endog, instruments=Z)
+gmm_results = gmm_model.fit()
+
+# Show results
+print(gmm_results.summary)
