@@ -1,81 +1,55 @@
-# Import necessary libraries
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
-from linearmodels.iv import IVGMM  # Import IVGMM from linearmodels
 from scipy.optimize import minimize
 
 # Load the CigarettesSW dataset
 data = sm.datasets.get_rdataset("CigarettesSW", "AER").data
 
-# Convert variables to log form for elasticity interpretation
-data['log_packs'] = np.log(data['packs'])  # Dependent variable
-data['log_rprice'] = np.log(data['price'] / data['cpi'])  # Endogenous regressor
-data['log_rincome'] = np.log(data['income'] / data['population'] / data['cpi'])  # Exogenous regressor
-data['salestax'] = data['tax'] / data['cpi']  # Instrument
+# Create variables
+data['log_packs'] = np.log(data['packs'])
+data['log_rprice'] = np.log(data['price'] / data['cpi'])
+data['log_rincome'] = np.log(data['income'] / data['population'] / data['cpi'])
+data['salestax'] = data['tax'] / data['cpi']
 
 # Define variables
-y = data['log_packs']  # Dependent variable
-X_endog = data[['log_rprice']]  # Endogenous variable (2D)
-X_exog = sm.add_constant(data[['log_rincome']])  # Exogenous variable + constant
-Z = data[['salestax']]  # Instrument (DO NOT add a constant)
+y = data['log_packs'].values.reshape(-1, 1)
+X = sm.add_constant(data[['log_rprice', 'log_rincome']]).values
+Z = sm.add_constant(data[['salestax', 'log_rincome']]).values
 
-# --- Perform IV Estimation using Generalized Method of Moments (GMM) ---
-gmm_model = IVGMM(dependent=y, exog=X_exog, endog=X_endog, instruments=Z).fit()
+n = y.shape[0]
 
-# Display the results
-print("\n--- GMM Estimation Results ---")
-print(gmm_model.summary)
-
-################# Manual calculation
-
-# Define variables as vectors and matrices
-y = data['log_packs'].values.reshape(-1, 1)  # Convert to column vector
-X = sm.add_constant(data[['log_rprice', 'log_rincome']]).values  # Regressors
-Z = sm.add_constant(data[['salestax', 'log_rincome']]).values  # Instruments
-
-# Define GMM objective function
+# Step 1: Identity weighting matrix
 def gmm_objective(beta, X, Z, y, W):
-    """ Computes the GMM objective function (returns a scalar) """
-    residuals = y - X @ beta.reshape(-1, 1)  # Ensure beta is properly shaped
-    moment_conditions = (Z.T @ residuals) / len(y)  # Moment conditions
-    return (moment_conditions.T @ W @ moment_conditions).item()  # Extract scalar
+    residuals = y - X @ beta.reshape(-1, 1)
+    g = Z.T @ residuals / n
+    return float(g.T @ W @ g)
 
-# Initialize parameters
-beta_init = np.zeros((X.shape[1],))  # Initial guess (1D array)
+beta_init = np.zeros((X.shape[1],))
+W_identity = np.eye(Z.shape[1])
 
-# First-step: Use Identity Matrix as weighting matrix
-W_init = np.identity(Z.shape[1])  # Identity weighting matrix
+res1 = minimize(gmm_objective, beta_init, args=(X, Z, y, W_identity), method='BFGS')
+beta_1step = res1.x.reshape(-1, 1)
 
-# Estimate beta using numerical optimization
-gmm_results = minimize(gmm_objective, beta_init, args=(X, Z, y, W_init), method='BFGS')
+# Step 2: Compute optimal weighting matrix W = S^{-1}
+residuals_1step = y - X @ beta_1step
+g_i = Z * residuals_1step  # element-wise multiplication
+S = g_i.T @ g_i / n
+W_opt = np.linalg.inv(S)
 
-# Extract GMM estimates
-beta_gmm = gmm_results.x.reshape(-1, 1)
+# Re-estimate using optimal weighting matrix
+res2 = minimize(gmm_objective, beta_1step.flatten(), args=(X, Z, y, W_opt), method='BFGS')
+beta_2step = res2.x.reshape(-1, 1)
 
-# Compute residuals
-residuals = y - X @ beta_gmm
-
-# Second-step: Compute Optimal Weighting Matrix W = (Z'Z)^-1
-Omega = (residuals.T @ residuals) / len(y) * np.identity(Z.shape[1])  # Estimate error covariance
-W_opt = np.linalg.inv(Z.T @ Z)  # Optimal weighting matrix
-
-# Re-estimate beta using the new weighting matrix
-gmm_results_opt = minimize(gmm_objective, beta_gmm.flatten(), args=(X, Z, y, W_opt), method='BFGS')
-beta_gmm_opt = gmm_results_opt.x.reshape(-1, 1)
-
-# Compute standard errors correctly
-# Variance of GMM estimator: Var(β_GMM) = (X'Z W Z'X)^-1
-J_inv = np.linalg.inv(X.T @ Z @ W_opt @ Z.T @ X)  # Asymptotic variance formula
-sigma_sq = (residuals.T @ residuals) / (len(y) - len(beta_gmm))  # Estimated variance of residuals
-var_beta_gmm = sigma_sq * J_inv  # Variance-covariance matrix
-std_err = np.sqrt(np.diag(var_beta_gmm))  # Standard errors
+# Compute asymptotic variance of GMM estimator
+G = - (X.T @ Z) / n  # Derivative of moment condition
+var_beta_gmm = np.linalg.inv(G @ W_opt @ G.T) / n
+std_errors = np.sqrt(np.diag(var_beta_gmm)).reshape(-1, 1)
 
 # Display results
 results_df = pd.DataFrame({
-    'Coefficient': beta_gmm_opt.flatten(),
-    'Std. Error': std_err.flatten()
+    'Coefficient': beta_2step.flatten(),
+    'Std. Error': std_errors.flatten()
 }, index=['Intercept', 'log_rprice', 'log_rincome'])
 
-# Print the results
 print(results_df)
