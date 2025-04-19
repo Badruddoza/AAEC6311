@@ -84,3 +84,4 @@ gmm_results = gmm_model.fit()
 
 # Show results
 print(gmm_results.summary)
+### Notice that the SEs are slightly different because the package assumes the model is heteroskedastic
