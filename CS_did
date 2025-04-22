@@ -1,0 +1,54 @@
+import pandas as pd
+
+# Create toy dataset
+data = {
+    "Unit": ["A"]*4 + ["B"]*4 + ["C"]*4,
+    "Group_Gi": [2]*4 + [3]*4 + ["Never"]*4,
+    "Time_t": [1, 2, 3, 4]*3,
+    "Treated": [0, 1, 1, 1,   # A
+                0, 0, 1, 1,   # B
+                0, 0, 0, 0],  # C
+    "Y_it": [5, 7, 8, 9,      # A
+             4, 4.5, 7, 7.5,  # B
+             6, 6.5, 7, 7.5]  # C
+}
+
+df = pd.DataFrame(data)
+
+# Display the full dataset
+print("=== Toy Panel Dataset ===")
+print(df)
+
+# Compute ATT_{2,2} (effect for Group 2 in period 2)
+# Step 1: Treated unit in group 2 at t=2
+treated_obs = df[(df["Unit"] == "A") & (df["Time_t"] == 2)]
+Y_treated = treated_obs["Y_it"].values[0]
+
+# Step 2: Find control units (not-yet-treated at t=2)
+control_obs = df[(df["Time_t"] == 2) & (df["Treated"] == 0)]
+Y_control = control_obs["Y_it"].mean()
+
+# Step 3: Compute ATT
+ATT_2_2 = Y_treated - Y_control
+
+print(f"\n=== ATT_{{2,2}} Calculation ===")
+print(f"Y_treated (A, t=2): {Y_treated}")
+print(f"Average Y_control (B, C at t=2): {Y_control:.2f}")
+print(f"Estimated ATT_{{2,2}}: {ATT_2_2:.2f}")
+
+# Optional: Pretty display in notebook
+import matplotlib.pyplot as plt
+
+def show_table(df):
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.axis('tight')
+    ax.axis('off')
+    table = ax.table(cellText=df.values, colLabels=df.columns, cellLoc='center', loc='center')
+    table.scale(1.2, 1.2)
+    plt.title("Toy Panel Data for DiD (Callaway & Sant'Anna Setup)", fontsize=12)
+    plt.show()
+
+# Uncomment to display as a table if you're using Jupyter
+# show_table(df)
+
+#You can use DiD package in R or python
