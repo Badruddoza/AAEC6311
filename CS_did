@@ -56,3 +56,56 @@ def show_table(df):
 # show_table(df)
 
 #You can use DiD package in R or python
+
+
+#### Event time plots
+
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Create toy dataset
+data = {
+    "Unit": ["A"]*4 + ["B"]*4 + ["C"]*4,
+    "Group_Gi": [2]*4 + [3]*4 + [None]*4,  # None = never treated
+    "Time_t": [1, 2, 3, 4]*3,
+    "Treated": [0, 1, 1, 1,   # A
+                0, 0, 1, 1,   # B
+                0, 0, 0, 0],  # C
+    "Y_it": [5, 7, 8, 9,
+             4, 4.5, 7, 7.5,
+             6, 6.5, 7, 7.5]
+}
+df = pd.DataFrame(data)
+
+# Convert Group_Gi to numeric (None becomes NaN)
+df["Group_Gi"] = pd.to_numeric(df["Group_Gi"], errors="coerce")
+
+# Plot 1: Y vs Time for each unit
+plt.figure(figsize=(8, 4))
+for unit in df["Unit"].unique():
+    unit_df = df[df["Unit"] == unit]
+    plt.plot(unit_df["Time_t"], unit_df["Y_it"], label=f"Unit {unit}")
+plt.xlabel("Time (t)")
+plt.ylabel("Y_it")
+plt.title("Y over Time by Unit")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# Plot 2: Y vs Event-Time (t - G_i), only for treated units
+df_event = df.dropna(subset=["Group_Gi"]).copy()
+df_event["Event_time"] = df_event["Time_t"] - df_event["Group_Gi"]
+
+plt.figure(figsize=(8, 4))
+for unit in df_event["Unit"].unique():
+    unit_df = df_event[df_event["Unit"] == unit]
+    plt.plot(unit_df["Event_time"], unit_df["Y_it"], label=f"Unit {unit}")
+plt.xlabel("Event Time (t - G_i)")
+plt.ylabel("Y_it")
+plt.title("Y over Event Time by Unit")
+plt.axvline(x=0, color='gray', linestyle='--', label='Treatment Begins')
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
