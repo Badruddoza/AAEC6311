@@ -1,3 +1,7 @@
+# This illustrates a simplified version of ATT_{g,t} estimation
+# using Callaway & Sant'Anna (2021) logic:
+# Group g = 2, Period t = 2, estimate based on not-yet-treated units.
+
 import pandas as pd
 
 # Create toy dataset
