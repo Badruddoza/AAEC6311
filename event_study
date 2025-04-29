@@ -1,0 +1,106 @@
+import pandas as pd
+import numpy as np
+import statsmodels.api as sm
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Simulate panel data for event study
+np.random.seed(42)
+n_units = 50
+n_periods = 10
+event_time = 5  # Treatment occurs at period 5
+
+# Create panel structure
+df = pd.DataFrame([(i, t) for i in range(n_units) for t in range(n_periods)],
+                  columns=['unit', 'time'])
+df
+
+# Assign treatment: half treated at t = 5, half never treated
+df['treated'] = (df['unit'] < n_units / 2).astype(int)
+df['event_time'] = df['time'] - event_time
+df
+
+df['event_time'] = df.apply(lambda row: row['event_time'] if row['treated'] == 1 else np.nan, axis=1)
+df
+
+# Generate event time dummies from -4 to +4 (omit -1 as reference)
+for k in range(-4, 5):
+    if k != -1:
+        df[f'd_{k}'] = ((df['event_time'] == k).astype(int)).fillna(0)
+df
+
+# Add unit and time fixed effects
+df = pd.get_dummies(df, columns=['unit', 'time'], drop_first=True)
+df
+
+# Simulate outcome
+# True treatment effects increase after treatment
+true_effect = {k: 0.0 for k in range(-4, 0)}
+true_effect.update({0: 0.2, 1: 0.3, 2: 0.4, 3: 0.5, 4: 0.5})
+df['treatment_effect'] = df['event_time'].map(true_effect).fillna(0)
+df
+
+# Add noise to outcome
+df['y'] = 1 + df['treatment_effect'] + np.random.normal(0, 0.2, size=len(df))
+df
+
+# Prepare regression matrix
+X_cols = [f'd_{k}' for k in range(-4, 5) if k != -1] + \
+         [col for col in df.columns if col.startswith('unit_') or col.startswith('time_')]
+X = df[X_cols]
+X = sm.add_constant(X)
+X = X.astype(float)  
+y = df['y']
+df
+
+# Estimate event study regression
+model = sm.OLS(y, X).fit()
+
+
+# Extract event-time coefficients
+coefs = model.params[[f'd_{k}' for k in range(-4, 5) if k != -1]]
+conf_int = model.conf_int().loc[[f'd_{k}' for k in range(-4, 5) if k != -1]]
+
+# Combine coefficients and confidence intervals into one DataFrame
+results_df = pd.DataFrame({
+    'Coefficient': coefs.values,
+    'CI Lower': conf_int[0].values,
+    'CI Upper': conf_int[1].values
+}, index=coefs.index)
+
+# Print the table
+results_df.round(3)  # round to 3 decimal places for neatness
+
+# Create dataframe for plotting
+plot_df = pd.DataFrame({
+    'event_time': [k for k in range(-4, 5) if k != -1],
+    'coef': coefs.values,
+    'lower': conf_int[0].values,
+    'upper': conf_int[1].values
+})
+
+# Plot the event study graph
+plt.figure(figsize=(8, 5))
+
+plt.errorbar(plot_df['event_time'], plot_df['coef'],
+             yerr=[plot_df['coef'] - plot_df['lower'], plot_df['upper'] - plot_df['coef']],
+             fmt='o', color='black', capsize=4, markersize=5, label='Coefficient')
+
+plt.axhline(0, color='gray', linestyle='-')
+plt.axvline(0, color='gray', linestyle='--')
+plt.xlabel('Event Time')
+plt.ylabel('Coefficient')
+plt.title('Event Study: Estimated Effects')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# F-test: Are pre-treatment coefficients jointly zero? (Parallel Trends Test)
+# List of pre-treatment dummies
+pre_treatment_vars = ['d_-4', 'd_-3', 'd_-2']
+# Build the restriction matrix for F-test
+hypotheses = ' = 0, '.join(pre_treatment_vars) + ' = 0'
+# Perform the F-test
+f_test = model.f_test(hypotheses)
+# Print the F-test result
+print(f_test)
