@@ -1,0 +1,53 @@
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import NearestNeighbors
+import matplotlib.pyplot as plt
+
+# 1. Simulate data
+np.random.seed(1234)
+n = 500
+X1 = np.random.normal(0, 1, n)
+X2 = np.random.normal(0, 1, n)
+X = np.column_stack((X1, X2))
+
+# Simulate treatment assignment (logit model)
+true_pscore = 1 / (1 + np.exp(- (0.5 * X1 + 0.5 * X2)))
+D = np.random.binomial(1, true_pscore)
+
+# Simulate outcomes
+tau = 2  # true treatment effect
+Y0 = 1 + 0.5 * X1 + 0.5 * X2 + np.random.normal(0, 1, n)
+Y1 = Y0 + tau
+Y = D * Y1 + (1 - D) * Y0
+
+# Put in DataFrame
+df = pd.DataFrame({'X1': X1, 'X2': X2, 'D': D, 'Y': Y})
+
+# 2. Estimate propensity scores
+logit = LogisticRegression()
+logit.fit(df[['X1', 'X2']], df['D'])
+df['p_hat'] = logit.predict_proba(df[['X1', 'X2']])[:, 1]
+
+# 3. Perform Nearest Neighbor Matching
+treated = df[df['D'] == 1]
+control = df[df['D'] == 0]
+
+nn = NearestNeighbors(n_neighbors=1)
+nn.fit(control[['p_hat']])
+distances, indices = nn.kneighbors(treated[['p_hat']])
+matched_control = control.iloc[indices.flatten()].copy()
+matched_control.index = treated.index  # align indices
+
+# 4. Estimate ATT
+att = (treated['Y'] - matched_control['Y']).mean()
+print(f"Estimated ATT from PSM: {att:.3f}")
+
+# 5. Optional: Visualize propensity score overlap
+plt.hist(treated['p_hat'], bins=20, alpha=0.5, label='Treated')
+plt.hist(control['p_hat'], bins=20, alpha=0.5, label='Control')
+plt.xlabel('Estimated Propensity Score')
+plt.ylabel('Frequency')
+plt.title('Propensity Score Distribution')
+plt.legend()
+plt.show()
