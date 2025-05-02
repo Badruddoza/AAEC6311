@@ -1,0 +1,38 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from doubleml import DoubleMLData, DoubleMLPLR
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LassoCV
+
+# Set random seed for reproducibility
+np.random.seed(1234)
+
+# Generate simulated data (for teaching purposes)
+n = 1000  # Number of observations
+X = np.random.normal(size=(n, 5))  # 5 covariates
+D = X[:, 0] + np.random.normal(size=n)  # Treatment (depends on X1)
+Y = 0.5 * D + X[:, 1] + np.random.normal(size=n)  # Outcome
+
+# Create DoubleML dataset
+dml_data = DoubleMLData.from_arrays(
+    x=X, y=Y, d=D  # d=treatment, y=outcome, x=covariates
+)
+
+# Step 1: Define machine learning models for nuisance functions
+ml_g = LassoCV()  # Model for E[Y|X]
+ml_m = RandomForestRegressor()  # Model for E[D|X]
+
+# Step 2: Initialize DoubleML estimator
+dml_plr = DoubleMLPLR(
+    dml_data,
+    ml_g,
+    ml_m,
+    n_folds=5  # Cross-validation folds
+)
+
+# Step 3: Fit the model
+dml_plr.fit()
+
+# Step 4: Print results
+print(dml_plr.summary)
